@@ -220,3 +220,4 @@ __marimo__/
 .streamlit/secrets.toml
 .python-version
 uv.lock
+huggingface
