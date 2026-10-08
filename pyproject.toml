@@ -1,0 +1,30 @@
+[project]
+name = "myllm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "fufu", email = "fufurobot@outlook.com" }
+]
+requires-python = ">=3.9,<3.14"
+dependencies = [
+    "torch==2.7.1+cu118",
+    "torchaudio==2.7.1",
+    "torchvision==0.22.1",
+]
+
+[project.scripts]
+myllm = "myllm:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
+torchaudio = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu118"
