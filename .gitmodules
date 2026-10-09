@@ -1,0 +1,3 @@
+[submodule "repo/dataset/ebible"]
+	path = repo/dataset/ebible
+	url = git@github.com:BibleNLP/ebible.git
