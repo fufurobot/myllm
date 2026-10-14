@@ -1,3 +1,6 @@
 [submodule "repo/dataset/ebible"]
 	path = repo/dataset/ebible
 	url = git@github.com:BibleNLP/ebible.git
+[submodule "repo/judge/harbor"]
+	path = repo/judge/harbor
+	url = git@github.com:laude-institute/harbor
