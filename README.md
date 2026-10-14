@@ -152,6 +152,20 @@ Useful flags:
 Artifacts are written to `runs/token_shift/`: `model.pt`, `tokenizer.json`,
 `config.json`, and `metrics.jsonl`.
 
+### CUDA container
+
+The CUDA image is published to GHCR on each push to `main`. It uses PyTorch
+2.8.0 with CUDA 12.8 and checks that the build includes `sm_120`. The eBible
+corpus is intentionally mounted at runtime rather than copied into the image.
+
+```bash
+docker run --rm --gpus all \
+  -v "$PWD/repo/dataset/ebible:/app/repo/dataset/ebible:ro" \
+  -v "$PWD/runs:/app/runs" \
+  ghcr.io/fufurobot/myllm:main \
+  train --language eng --dim 128 --num-layers 20 --max-steps 10000 --device cuda
+```
+
 ## Development
 
 ```bash
