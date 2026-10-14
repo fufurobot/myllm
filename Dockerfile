@@ -6,11 +6,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY .devcontainer/post-create.sh .devcontainer/post-create.sh
+COPY ./.devcontainer/post-create.sh ./post-create.sh
 COPY ./hfd.sh ./hfd.sh
 COPY ./download-hf.sh ./download-hf.sh
 
-RUN /app/devcontainer/post-create.sh
+RUN ["/bin/bash", "/app/post-create.sh"]
 
 # Keep the CUDA-enabled PyTorch stack from the base image. Install the remaining
 # runtime dependencies without asking pip to replace its preinstalled Torch.
