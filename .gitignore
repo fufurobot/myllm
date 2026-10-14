@@ -224,6 +224,9 @@ __marimo__/
 .uv-cache/
 .hf-cache/
 
+# training outputs
+runs/
+
 # ignore uv lock for newest packages in ci
 
 uv.lock
