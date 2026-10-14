@@ -7,6 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY .devcontainer/post-create.sh .devcontainer/post-create.sh
+COPY ./hfd.sh ./hfd.sh
+COPY ./download-hf.sh ./download-hf.sh
 
 RUN .devcontainer/post-create.sh
 
