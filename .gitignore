@@ -220,6 +220,10 @@ __marimo__/
 .streamlit/secrets.toml
 .python-version
 
+# uv / huggingface caches created inside the workspace by devcontainers
+.uv-cache/
+.hf-cache/
+
 # ignore uv lock for newest packages in ci
 
 uv.lock
