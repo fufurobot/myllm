@@ -219,5 +219,14 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .python-version
+
+# ignore uv lock for newest packages in ci
+
 uv.lock
-huggingface
+
+# huggingface fine-grained ignore
+
+huggingface/mirrors/**
+!huggingface/mirrors/**/
+!huggingface/mirrors/**/.gitkeep
+
