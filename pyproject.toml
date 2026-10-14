@@ -3,12 +3,11 @@ name = "myllm"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-authors = [
-    { name = "fufu", email = "fufurobot@outlook.com" }
-]
-requires-python = ">=3.10,<3.14"
+authors = [{ name = "fufu", email = "fufurobot@outlook.com" }]
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "accelerate>=1.15.0",
+    "cwsandbox[wandb]>=1.19.1",
     "huggingface-hub>=0.36.2",
     "rwkv7-hf>=0.9.0",
     # Backend-neutral upper bound: keeps the transitive torch (pulled in by
@@ -26,11 +25,7 @@ dependencies = [
 # The two extras are declared mutually exclusive in [tool.uv.conflicts] below,
 # which lets uv resolve each backend into its own split. Choose exactly one.
 [project.optional-dependencies]
-cpu = [
-    "torch==2.7.1+cpu",
-    "torchaudio==2.7.1+cpu",
-    "torchvision==0.22.1+cpu",
-]
+cpu = ["torch==2.7.1+cpu", "torchaudio==2.7.1+cpu", "torchvision==0.22.1+cpu"]
 cu118 = [
     "torch==2.7.1+cu118",
     "torchaudio==2.7.1+cu118",
@@ -74,9 +69,4 @@ url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [dependency-groups]
-dev = [
-    "jupyter>=1.1.1",
-    "pytest>=8.4.2",
-    "ruff>=0.16.10",
-    "ty>=0.0.85",
-]
+dev = ["jupyter>=1.1.1", "pytest>=8.4.2", "ruff>=0.16.10", "ty>=0.0.85"]
