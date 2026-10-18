@@ -29,11 +29,29 @@ case "$TORCH_BACKEND" in
     *) echo "Error: TORCH_BACKEND must be 'cpu' or 'cu118', got '$TORCH_BACKEND'" >&2; exit 1 ;;
 esac
 
-# --- 1. Install uv -----------------------------------------------------------
+# ---- Install aria2 (static binary) ----
+log "Installing aria2"
+mkdir -p ~/.local/bin
+curl -L https://github.com/P3TERX/aria2-builder/releases/download/1.35.0_2020.09.04/aria2-1.35.0-static-linux-amd64.tar.gz \
+  | tar xz -C ~/.local/bin --strip-components=1
+
+# ---- Install uv ----
 log "Installing uv"
 if ! command -v uv >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
+
+# ---- Make sure ~/.local/bin and uv's bin dir are on PATH ----
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+# uv installs to ~/.local/bin by default; also source its env file if present
+[ -f "$HOME/.local/env" ] && . "$HOME/.local/env"
+
+log "Done. Versions:"
+aria2c --version | head -n1 || true
+uv --version || true
 
 # The uv installer drops the binary in ~/.local/bin, which may not be on PATH
 # for non-login shells yet.
