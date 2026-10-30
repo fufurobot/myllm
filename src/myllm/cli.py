@@ -6,18 +6,18 @@ import argparse
 import json
 from pathlib import Path
 
-from .data import (
-    DEFAULT_CORPUS_DIR,
-    DEFAULT_METADATA_CSV,
-    load_corpus,
-)
+# Imported at module scope would pull in numpy/torch for every command, which
+# defeats the point of the lazy package. Only the dataset/corpus paths are
+# needed for `dataset` and `inspect`, so those are imported where used.
 from .dataset import (
     ZstCsvDataset,
     ZstdUnavailableError,
     ZstJsonLinesDataset,
     ZstLineDataset,
 )
-from .trainer import TrainConfig, train
+
+DEFAULT_CORPUS_DIR = Path("repo/dataset/ebible/corpus")
+DEFAULT_METADATA_CSV = Path("repo/dataset/ebible/metadata/translations.csv")
 
 _DATASET_BY_FORMAT = {
     "lines": ZstLineDataset,
@@ -84,8 +84,8 @@ def _build_parser() -> argparse.ArgumentParser:
     d.add_argument("path", type=Path, help=".zst file or directory of .zst files")
     d.add_argument(
         "--format",
-        choices=sorted(_DATASET_BY_FORMAT),
-        default="lines",
+        choices=["auto", *sorted(_DATASET_BY_FORMAT)],
+        default="auto",
         help="record format stored per line (default: lines)",
     )
     d.add_argument("--num", type=int, default=3, help="how many records to print")
@@ -118,6 +118,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_train(args: argparse.Namespace) -> int:
+    from .trainer import TrainConfig, train
+
     cfg = TrainConfig(
         language=args.language,
         corpus_dir=args.corpus_dir,
@@ -150,7 +152,23 @@ def _cmd_train(args: argparse.Namespace) -> int:
     return 0
 
 
+def _detect_format(path: Path) -> str:
+    """Guess the record format from the filename (does not read the file).
+
+    `*.csv.zst` -> csv, `*.jsonl.zst` / `*.json.zst` -> jsonl, else lines.
+    """
+    name = path.name.lower()
+    if name.endswith(".csv.zst"):
+        return "csv"
+    if name.endswith((".jsonl.zst", ".json.zst", ".ndjson.zst")):
+        return "jsonl"
+    return "lines"
+
+
 def _cmd_dataset(args: argparse.Namespace) -> int:
+    if args.format == "auto":
+        args.format = _detect_format(args.path)
+        print(f"detected format: {args.format}")
     cls = _DATASET_BY_FORMAT[args.format]
     kwargs: dict = {
         "cache_size": args.cache_size,
@@ -228,11 +246,11 @@ def _cmd_rnn_demo(args: argparse.Namespace) -> int:
 
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
+    from .data import build_tokenizer, load_corpus
+
     corpus = load_corpus(
         args.language, args.corpus_dir, args.metadata_csv, max_files=args.max_files
     )
-    from .data import build_tokenizer
-
     tok = build_tokenizer(corpus, min_freq=1)
     n_chars = sum(len(line) for line in corpus.lines)
     n_spaces = sum(line.count(" ") for line in corpus.lines)
