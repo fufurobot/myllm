@@ -95,6 +95,38 @@ class TestCli:
         assert r.returncode == 0, r.stderr
         assert "row_stochastic: False" in r.stdout
 
+    def test_cli_does_not_import_torch(self):
+        """`myllm dataset` must work without torch installed/imported."""
+        code = (
+            "import sys;"
+            f"sys.path.insert(0, {SRC!r});"
+            "import myllm.cli as c;"
+            "assert 'torch' not in sys.modules, 'torch imported by cli';"
+            "assert 'numpy' not in sys.modules, 'numpy imported by cli';"
+            "print('ok')"
+        )
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+        assert r.returncode == 0, r.stderr
+        assert "ok" in r.stdout
+
+    def test_dataset_detects_csv_format(self, tmp_path):
+        zstd = _zstd()
+        p = tmp_path / "thing.csv.zst"
+        p.write_bytes(zstd.ZstdCompressor().compress(b"a,b\n1,2\n3,4\n"))
+        r = self._run("dataset", str(p), "--num", "1")
+        assert r.returncode == 0, r.stderr
+        assert "ZstCsvDataset" in r.stdout
+        assert "fields      : ['a', 'b']" in r.stdout
+        assert "records     : 2" in r.stdout
+
+    def test_dataset_detects_jsonl_format(self, tmp_path):
+        zstd = _zstd()
+        p = tmp_path / "thing.jsonl.zst"
+        p.write_bytes(zstd.ZstdCompressor().compress(b'{"x": 1}\n{"x": 2}\n'))
+        r = self._run("dataset", str(p), "--num", "1")
+        assert r.returncode == 0, r.stderr
+        assert "ZstJsonLinesDataset" in r.stdout
+
     def test_dataset_reports_missing_file(self):
         r = self._run("dataset", "/nonexistent/path.zst")
         assert r.returncode == 2
