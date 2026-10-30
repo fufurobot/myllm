@@ -158,8 +158,8 @@ class ZstLineDataset:
         skip_empty: bool = True,
         index_all: bool = False,
     ) -> None:
-        _require_zstd()
-
+        # Validate the path before the dependency check: a missing file is a
+        # more useful error than a missing package.
         p = Path(path)
         if p.is_dir():
             self.paths: list[Path] = sorted(p.glob("*.zst"))
@@ -169,6 +169,8 @@ class ZstLineDataset:
             if not p.is_file():
                 raise FileNotFoundError(f"dataset file not found: {p}")
             self.paths = [p]
+
+        _require_zstd()
 
         self.chunk_size = chunk_size
         self.cache_size = cache_size

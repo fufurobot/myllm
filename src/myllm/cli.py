@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .data import (
@@ -10,7 +11,19 @@ from .data import (
     DEFAULT_METADATA_CSV,
     load_corpus,
 )
+from .dataset import (
+    ZstCsvDataset,
+    ZstdUnavailableError,
+    ZstJsonLinesDataset,
+    ZstLineDataset,
+)
 from .trainer import TrainConfig, train
+
+_DATASET_BY_FORMAT = {
+    "lines": ZstLineDataset,
+    "csv": ZstCsvDataset,
+    "jsonl": ZstJsonLinesDataset,
+}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -63,6 +76,44 @@ def _build_parser() -> argparse.ArgumentParser:
     i.add_argument("--max-files", type=int, default=None)
     i.set_defaults(func=_cmd_inspect)
 
+    # -- dataset -------------------------------------------------------------
+    d = sub.add_parser(
+        "dataset",
+        help="inspect a line-separated .zst dataset (lines/csv/jsonl)",
+    )
+    d.add_argument("path", type=Path, help=".zst file or directory of .zst files")
+    d.add_argument(
+        "--format",
+        choices=sorted(_DATASET_BY_FORMAT),
+        default="lines",
+        help="record format stored per line (default: lines)",
+    )
+    d.add_argument("--num", type=int, default=3, help="how many records to print")
+    d.add_argument("--at", type=int, default=0, help="first record index to print")
+    d.add_argument("--cache-size", type=int, default=32, help="LRU chunk cache entries")
+    d.add_argument("--chunk-size", type=int, default=1 << 20, help="compressed chunk bytes")
+    d.add_argument("--key", default=None, help="jsonl: extract this key from each object")
+    d.add_argument("--delimiter", default=",", help="csv: field delimiter")
+    d.add_argument("--fields", default=None, help="csv: comma-separated column names")
+    d.add_argument("--no-strip", action="store_true", help="keep whitespace as-is")
+    d.set_defaults(func=_cmd_dataset)
+
+    # -- rnn-demo ------------------------------------------------------------
+    r = sub.add_parser(
+        "rnn-demo",
+        help="run the LinearRNN reference forward pass and show stability stats",
+    )
+    r.add_argument("--input-size", type=int, default=3)
+    r.add_argument("--hidden-size", type=int, default=4)
+    r.add_argument("--seq-len", type=int, default=5)
+    r.add_argument("--num-layers", type=int, default=1)
+    r.add_argument(
+        "--no-row-stochastic",
+        action="store_true",
+        help="disable row normalization (shows the gradient boom)",
+    )
+    r.set_defaults(func=_cmd_rnn_demo)
+
     return p
 
 
@@ -96,6 +147,83 @@ def _cmd_train(args: argparse.Namespace) -> int:
         log_interval=args.log_interval,
     )
     train(cfg)
+    return 0
+
+
+def _cmd_dataset(args: argparse.Namespace) -> int:
+    cls = _DATASET_BY_FORMAT[args.format]
+    kwargs: dict = {
+        "cache_size": args.cache_size,
+        "chunk_size": args.chunk_size,
+        "strip": not args.no_strip,
+    }
+    if args.format == "jsonl" and args.key:
+        kwargs["key"] = args.key
+    if args.format == "csv":
+        kwargs["delimiter"] = args.delimiter
+        if args.fields:
+            kwargs["fields"] = [f.strip() for f in args.fields.split(",")]
+
+    try:
+        ds = cls(args.path, **kwargs)
+    except ZstdUnavailableError as exc:
+        print(f"error: {exc}")
+        return 2
+    except FileNotFoundError as exc:
+        print(f"error: {exc}")
+        return 2
+
+    n = len(ds)
+    print(f"class       : {type(ds).__name__}")
+    print(f"files       : {len(ds.paths)}")
+    print(f"records     : {n:,}")
+    if args.format == "csv":
+        print(f"fields      : {ds.fields}")
+    print(f"chunk size  : {args.chunk_size:,} compressed bytes")
+    print(f"cache       : {args.cache_size} chunks (LRU)")
+
+    print()
+    for i in range(args.at, min(args.at + max(args.num, 0), n)):
+        rec = ds[i]
+        if isinstance(rec, dict):
+            text = json.dumps(rec, ensure_ascii=False)
+        else:
+            text = repr(rec)
+        print(f"[{i}] {text[:300]}")
+
+    print()
+    print(f"cache hits/misses: {ds.cache.hits}/{ds.cache.misses}")
+    return 0
+
+
+def _cmd_rnn_demo(args: argparse.Namespace) -> int:
+    import torch
+
+    from .linear_rnn import LinearRNN, LinearRNNConfig
+
+    cfg = LinearRNNConfig(
+        input_size=args.input_size,
+        hidden_size=args.hidden_size,
+        num_layers=args.num_layers,
+        row_stochastic=not args.no_row_stochastic,
+    )
+    model = LinearRNN(cfg)
+    x = torch.randn(args.seq_len, args.input_size)
+    out = model(x)
+
+    print(f"input        : {tuple(x.shape)}")
+    print(f"output       : {tuple(out.shape)}")
+    print(f"row_stochastic: {cfg.row_stochastic}")
+    if cfg.row_stochastic:
+        w = model.layers[0].w_h.effective().detach()
+        print(f"row sums     : {w.sum(1)[:4].tolist()}")
+        print(f"spectral radius: {model.spectral_radius_of_transition():.6f}")
+
+    loss = out.sum()
+    loss.backward()
+    g = model.layers[0].w_x.weight.grad
+    print(f"grad norm    : {float(g.norm()):.4e}")
+    print(f"grad finite  : {bool(torch.isfinite(g).all())}")
     return 0
 
 

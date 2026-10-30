@@ -280,6 +280,17 @@ class TestMissingDependency:
     def test_clear_error_without_zstandard(self, tmp_path, monkeypatch):
         import myllm.dataset as m
 
+        # The file must exist: path validation deliberately runs before the
+        # dependency check so a missing file reports "not found".
+        p = tmp_path / "whatever.zst"
+        p.write_bytes(b"")
         monkeypatch.setattr(m, "zstd", None)
         with pytest.raises(ZstdUnavailableError):
-            m.ZstLineDataset(tmp_path / "whatever.zst")
+            m.ZstLineDataset(p)
+
+    def test_missing_file_reported_before_missing_dependency(self, tmp_path, monkeypatch):
+        import myllm.dataset as m
+
+        monkeypatch.setattr(m, "zstd", None)
+        with pytest.raises(FileNotFoundError):
+            m.ZstLineDataset(tmp_path / "absent.zst")

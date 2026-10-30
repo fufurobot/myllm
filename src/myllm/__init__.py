@@ -1,38 +1,61 @@
-"""myllm - a TokenShift RNN language modelling framework."""
+"""myllm - an experimental language modelling framework.
 
-from .data import Corpus, build_tokenizer, load_corpus, split_lines
-from .init import (
-    CountMatrix,
-    build_count_matrix,
-    factorize_nmf,
-    factorize_svd,
-    normalize_factors,
-)
-from .model import ModelConfig, TokenShiftLayer, TokenShiftLM
-from .tokenizer import Tokenizer, load_language_profiles
-from .trainer import TrainConfig, evaluate, train
+Heavy submodules (which need numpy/torch) are imported lazily so that lightweight
+pieces such as :mod:`myllm.dataset` can be used without the full ML stack.
+"""
+
+from __future__ import annotations
+
+from typing import Any
 
 __version__ = "0.1.0"
 
-__all__ = [
-    "Corpus",
-    "CountMatrix",
-    "ModelConfig",
-    "TokenShiftLM",
-    "TokenShiftLayer",
-    "Tokenizer",
-    "TrainConfig",
-    "build_count_matrix",
-    "build_tokenizer",
-    "evaluate",
-    "factorize_nmf",
-    "factorize_svd",
-    "load_corpus",
-    "load_language_profiles",
-    "normalize_factors",
-    "split_lines",
-    "train",
-]
+#: Public name -> submodule that defines it. Resolved on first access.
+_LAZY: dict[str, str] = {
+    "Corpus": "data",
+    "build_tokenizer": "data",
+    "load_corpus": "data",
+    "split_lines": "data",
+    "CountMatrix": "init",
+    "build_count_matrix": "init",
+    "factorize_nmf": "init",
+    "factorize_svd": "init",
+    "normalize_factors": "init",
+    "ModelConfig": "model",
+    "TokenShiftLayer": "model",
+    "TokenShiftLM": "model",
+    "LinearRNN": "linear_rnn",
+    "LinearRNNConfig": "linear_rnn",
+    "RowStochastic": "linear_rnn",
+    "prefix_scan": "linear_rnn",
+    "Tokenizer": "tokenizer",
+    "load_language_profiles": "tokenizer",
+    "TrainConfig": "trainer",
+    "evaluate": "trainer",
+    "train": "trainer",
+    "ZstLineDataset": "dataset",
+    "ZstCsvDataset": "dataset",
+    "ZstJsonLinesDataset": "dataset",
+}
+
+__all__ = list(_LAZY)
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve lazily-exported names (PEP 562)."""
+    module_name = _LAZY.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib import import_module
+
+    module = import_module(f".{module_name}", __name__)
+    value = getattr(module, name)
+    globals()[name] = value  # cache for subsequent lookups
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(list(globals()) + list(_LAZY))
 
 
 def main() -> None:

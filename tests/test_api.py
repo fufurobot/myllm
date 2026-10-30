@@ -63,7 +63,7 @@ class TestLazyExports:
             "assert 'numpy' not in sys.modules, 'numpy was imported eagerly';"
             "print('ok')"
         )
-        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
         assert r.returncode == 0, r.stderr
         assert "ok" in r.stdout
 
@@ -75,6 +75,7 @@ class TestCli:
             capture_output=True,
             text=True,
             env={"PYTHONPATH": SRC, "PATH": "/usr/bin:/bin"},
+            check=False,
         )
 
     def test_help_lists_dataset_and_rnn_demo(self):
