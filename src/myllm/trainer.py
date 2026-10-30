@@ -1,4 +1,4 @@
-"""Minimal trainer for :class:`~myllm.model.TokenShiftLM`.
+"""Minimal trainer for :class:`~myllm.linear_rnn.LinearRNNLM`.
 
 Pipeline
 --------
@@ -32,7 +32,7 @@ from .init import (
     factorize_svd,
     normalize_factors,
 )
-from .model import ModelConfig, TokenShiftLM
+from .linear_rnn import LinearRNNLM, LinearRNNLMConfig
 from .tokenizer import Tokenizer
 
 
@@ -48,6 +48,8 @@ class TrainConfig:
     num_layers: int = 2
     dropout: float = 0.0
     freeze_embeddings: bool = True
+    #: Enforce row-stochastic transition matrices (spectral radius 1).
+    row_stochastic: bool = True
 
     init_method: str = "svd"  # "svd" or "nmf"
     nmf_iters: int = 200
@@ -122,7 +124,7 @@ def _lr_at(step: int, cfg: TrainConfig) -> float:
 
 
 def initialize_embeddings(
-    model: TokenShiftLM,
+    model: LinearRNNLM,
     encoded_train: list[list[int]],
     tokenizer: Tokenizer,
     cfg: TrainConfig,
@@ -159,7 +161,7 @@ def initialize_embeddings(
 
 @torch.no_grad()
 def evaluate(
-    model: TokenShiftLM,
+    model: LinearRNNLM,
     loader: DataLoader,
     device: torch.device,
     max_batches: int,
@@ -219,14 +221,16 @@ def train(cfg: TrainConfig) -> dict:
     val_ds = LineDataset(encoded_val, cfg.seq_len) if encoded_val else None
 
     # --- 2. model ----------------------------------------------------------
-    model_cfg = ModelConfig(
+    # Pure linear recurrence evaluated with a parallel prefix scan, with
+    # row-stochastic transition matrices so gradients cannot blow up.
+    model_cfg = LinearRNNLMConfig(
         vocab_size=len(tokenizer),
         dim=cfg.dim,
         num_layers=cfg.num_layers,
+        row_stochastic=cfg.row_stochastic,
         freeze_embeddings=cfg.freeze_embeddings,
-        dropout=cfg.dropout,
     )
-    model = TokenShiftLM(model_cfg).to(device)
+    model = LinearRNNLM(model_cfg).to(device)
 
     # --- 3. factorised init ------------------------------------------------
     init_stats = initialize_embeddings(model, encoded_train, tokenizer, cfg)

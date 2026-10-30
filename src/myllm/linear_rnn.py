@@ -41,6 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -312,3 +313,151 @@ def prefix_scan(
 
     # Apply the initial state contribution: h_t = A_t h_0 + c_t
     return c + torch.einsum("btij,bj->bti", a, h0)
+
+
+@dataclass
+class LinearRNNLMConfig:
+    """Hyperparameters for :class:`LinearRNNLM`."""
+
+    vocab_size: int
+    #: Input feature dimension fed to the recurrent stack. Defaults to ``dim``.
+    input_dim: int | None = None
+    dim: int = 128
+    num_layers: int = 1
+    row_stochastic: bool = True
+    freeze_embeddings: bool = True
+    tie_weights: bool = False
+    min_row_sum: float = 1e-3
+    max_row_sum: float = 1e3
+
+    def __post_init__(self) -> None:
+        if self.tie_weights:
+            raise ValueError(
+                "W_in and W_out must not be tied: they are the two factors of "
+                "the bigram transition matrix."
+            )
+        if self.input_dim is not None and self.input_dim <= 0:
+            raise ValueError("input_dim must be positive")
+        if self.vocab_size <= 0 or self.dim <= 0:
+            raise ValueError("vocab_size and dim must be positive")
+
+
+class LinearRNNLM(nn.Module):
+    """A linear RNN language model with frozen, factorised embeddings.
+
+    The recurrent stack operates on the input embedding of each token. Logits
+    come from the final hidden state projected through the frozen output
+    linear:
+
+        x_t   = W_in[:, token_t]        # input embedding, [B, T, in_dim]
+        h_T   = LinearRNN(x)            # [B, T, dim]
+        logits = h_t @ W_out^T          # [B, T, V]
+
+    ``W_in`` (``[in_dim, V]``) and ``W_out`` (``[V, dim]``) are initialised from
+    a factorisation of the bigram count matrix and frozen by default. They are
+    never tied.
+    """
+
+    def __init__(self, config: LinearRNNLMConfig) -> None:
+        super().__init__()
+        self.config = config
+        in_dim = config.input_dim if config.input_dim is not None else config.dim
+        if in_dim != config.dim:
+            # The recurrent layer consumes in_dim features and produces `dim`.
+            self.input_proj = nn.Linear(in_dim, config.dim, bias=False)
+        else:
+            self.input_proj = nn.Identity()
+
+        self.input_embedding = nn.Parameter(
+            torch.empty(in_dim, config.vocab_size),
+            requires_grad=not config.freeze_embeddings,
+        )
+        self.output_linear = nn.Parameter(
+            torch.empty(config.vocab_size, config.dim),
+            requires_grad=not config.freeze_embeddings,
+        )
+        nn.init.normal_(self.input_embedding, std=0.02)
+        nn.init.normal_(self.output_linear, std=0.02)
+
+        self.rnn = LinearRNN(
+            LinearRNNConfig(
+                input_size=config.dim,
+                hidden_size=config.dim,
+                num_layers=config.num_layers,
+                row_stochastic=config.row_stochastic,
+                min_row_sum=config.min_row_sum,
+                max_row_sum=config.max_row_sum,
+            )
+        )
+        self.final_norm = nn.LayerNorm(config.dim)
+
+    @torch.no_grad()
+    def load_factorized_embeddings(self, w_in, w_out) -> None:
+        """Install ``w_in [d, V]`` / ``w_out [V, d]`` into the frozen params."""
+        w_in_t = torch.as_tensor(w_in, dtype=self.input_embedding.dtype)
+        w_out_t = torch.as_tensor(w_out, dtype=self.output_linear.dtype)
+        if w_in_t.shape != self.input_embedding.shape:
+            raise ValueError(
+                f"w_in shape {tuple(w_in_t.shape)} != expected "
+                f"{tuple(self.input_embedding.shape)}"
+            )
+        if w_out_t.shape != self.output_linear.shape:
+            raise ValueError(
+                f"w_out shape {tuple(w_out_t.shape)} != expected "
+                f"{tuple(self.output_linear.shape)}"
+            )
+        self.input_embedding.copy_(w_in_t)
+        self.output_linear.copy_(w_out_t)
+
+    def embed(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Look up input embeddings; ``[B, T]`` -> ``[B, T, in_dim]``."""
+        return F.embedding(tokens, self.input_embedding.t())
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """``tokens`` ``[B, T]`` -> logits ``[B, T, V]``."""
+        if tokens.dim() != 2:
+            raise ValueError(f"tokens must be [B, T], got {tuple(tokens.shape)}")
+        x = self.embed(tokens)
+        x = self.input_proj(x)
+        h = self.rnn(x)                     # [B, T, dim]
+        h = self.final_norm(h)
+        return h @ self.output_linear.t()   # [B, T, V]
+
+    @torch.no_grad()
+    def generate(
+        self,
+        prompt: torch.Tensor,
+        max_new_tokens: int = 64,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        eos_id: int | None = None,
+    ) -> torch.Tensor:
+        """Naive autoregressive sampling from a ``[B, T]`` prompt."""
+        self.eval()
+        tokens = prompt
+        for _ in range(max_new_tokens):
+            logits = self(tokens)[:, -1, :] / max(temperature, 1e-6)
+            if top_k is not None and top_k > 0:
+                k = min(top_k, logits.shape[-1])
+                vals, _ = torch.topk(logits, k, dim=-1)
+                logits = torch.where(
+                    logits < vals[:, -1].unsqueeze(-1),
+                    torch.full_like(logits, float("-inf")),
+                    logits,
+                )
+            probs = F.softmax(logits, dim=-1)
+            nxt = torch.multinomial(probs, num_samples=1)
+            tokens = torch.cat([tokens, nxt], dim=1)
+            if eos_id is not None and bool((nxt == eos_id).all()):
+                break
+        return tokens
+
+    def num_parameters(self, trainable_only: bool = False) -> int:
+        return sum(
+            p.numel() for p in self.parameters() if (p.requires_grad or not trainable_only)
+        )
+
+    def parameter_summary(self) -> dict[str, int]:
+        total = self.num_parameters()
+        trainable = self.num_parameters(trainable_only=True)
+        return {"total": total, "trainable": trainable, "frozen": total - trainable}

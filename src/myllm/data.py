@@ -136,3 +136,106 @@ def split_lines(
     if n_val == 0:
         return lines, []
     return lines[:-n_val], lines[-n_val:]
+
+
+# ---------------------------------------------------------------------------
+# Zst-backed corpus loading
+# ---------------------------------------------------------------------------
+
+
+def load_zst_corpus(
+    path: Path,
+    text_field: str | None = "sentence",
+    language_code: str | None = None,
+    metadata_csv: Path = DEFAULT_METADATA_CSV,
+    limit: int | None = None,
+    cache_size: int = 32,
+    chunk_size: int = 1 << 20,
+) -> Corpus:
+    """Load verse lines from a ``.zst`` dataset.
+
+    Supports the three line formats handled by :mod:`myllm.dataset`:
+
+    * ``*.csv.zst`` -- read with :class:`~myllm.dataset.ZstCsvDataset`; the
+      ``text_field`` column supplies the sentence. This is the format of the
+      released ``bible_sentences.csv.zst`` artifact.
+    * ``*.jsonl.zst`` -- read with
+      :class:`~myllm.dataset.ZstJsonLinesDataset`; ``text_field`` is the key.
+    * anything else -- read with :class:`~myllm.dataset.ZstLineDataset`, one
+      record per line (``text_field`` is ignored).
+
+    Args:
+        path: ``.zst`` file (or directory of them).
+        text_field: Column/key holding the sentence for CSV/JSONL inputs.
+        language_code: Language code used for tokenization mode. When omitted
+            it is taken from a ``lang`` column if present, else guessed from
+            the text.
+        metadata_csv: eBible metadata used to resolve the tokenization script.
+        limit: Stop after this many lines (useful for smoke tests).
+        cache_size: LRU chunk cache size passed to the loader.
+        chunk_size: Compressed bytes per read.
+
+    Raises:
+        KeyError: if ``text_field`` is absent from the CSV/JSONL records.
+    """
+    from .dataset import ZstCsvDataset, ZstJsonLinesDataset, ZstLineDataset
+
+    name = path.name.lower()
+    common = {"cache_size": cache_size, "chunk_size": chunk_size}
+
+    lines: list[str] = []
+    detected_lang: str | None = None
+
+    if name.endswith(".csv.zst"):
+        ds = ZstCsvDataset(path, **common)
+        fields = ds.fields or []
+        if text_field is not None and text_field not in fields:
+            raise KeyError(
+                f"text_field {text_field!r} not in CSV fields {fields}"
+            )
+        for i in range(len(ds)):
+            row = ds[i]
+            if text_field is not None:
+                val = (row.get(text_field) or "").strip()
+                if not val or val in SKIP_LINE_VALUES:
+                    continue
+                lines.append(val)
+            else:
+                lines.append(",".join(str(v) for v in row))
+            if detected_lang is None and "lang" in row:
+                detected_lang = (row.get("lang") or "").strip() or None
+            if limit is not None and len(lines) >= limit:
+                break
+    elif name.endswith((".jsonl.zst", ".json.zst", ".ndjson.zst")):
+        ds = ZstJsonLinesDataset(path, key=text_field, **common)
+        for i in range(len(ds)):
+            val = ds[i]
+            if text_field is not None and val is None:
+                raise KeyError(f"key {text_field!r} missing from a JSONL record")
+            if isinstance(val, str):
+                val = val.strip()
+                if not val or val in SKIP_LINE_VALUES:
+                    continue
+                lines.append(val)
+            if limit is not None and len(lines) >= limit:
+                break
+    else:
+        ds = ZstLineDataset(path, **common)
+        for i in range(len(ds)):
+            val = ds[i]
+            if isinstance(val, str) and val.strip():
+                lines.append(val.strip())
+            if limit is not None and len(lines) >= limit:
+                break
+
+    if not lines:
+        raise ValueError(f"no text records found in {path}")
+
+    code = language_code or detected_lang or "??"
+    profiles = load_language_profiles(metadata_csv)
+    profile = profiles.get(code)
+    if profile is None:
+        profile = infer_profile_from_text("\n".join(lines[:5000]), code)
+
+    source_files = getattr(ds, "paths", [Path(path)])
+    return Corpus(code, profile, lines, list(source_files))
