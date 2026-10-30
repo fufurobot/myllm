@@ -70,4 +70,11 @@ url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [dependency-groups]
-dev = ["jupyter>=1.1.1", "pytest>=8.4.2", "ruff>=0.16.10", "ty>=0.0.85"]
+dev = [
+    "jupyter>=1.1.1",
+    "jupyterlab",
+    "marimo",
+    "pytest>=8.4.2",
+    "ruff>=0.16.10",
+    "ty>=0.0.85",
+]
