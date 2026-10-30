@@ -61,6 +61,23 @@ def _build_parser() -> argparse.ArgumentParser:
     t.add_argument("--grad-clip", type=float, default=1.0)
 
     t.add_argument("--max-files", type=int, default=None)
+    t.add_argument(
+        "--zst",
+        type=Path,
+        default=None,
+        help="train from a .zst artifact (csv/jsonl/lines) instead of the .txt corpus",
+    )
+    t.add_argument(
+        "--zst-text-field",
+        default="sentence",
+        help="CSV column / JSONL key holding the sentence (default: sentence)",
+    )
+    t.add_argument("--zst-limit", type=int, default=None, help="max records to read")
+    t.add_argument(
+        "--no-row-stochastic",
+        action="store_true",
+        help="disable row normalization of the transition matrices",
+    )
     t.add_argument("--seed", type=int, default=0)
     t.add_argument("--out-dir", type=Path, default=Path("runs/token_shift"))
     t.add_argument("--device", default="auto", help="auto, cpu, cuda, mps")
@@ -143,6 +160,10 @@ def _cmd_train(args: argparse.Namespace) -> int:
         warmup_steps=args.warmup_steps,
         grad_clip=args.grad_clip,
         max_files=args.max_files,
+        zst_path=args.zst,
+        zst_text_field=args.zst_text_field,
+        zst_limit=args.zst_limit,
+        row_stochastic=not args.no_row_stochastic,
         seed=args.seed,
         out_dir=args.out_dir,
         device=args.device,

@@ -42,6 +42,12 @@ class TrainConfig:
 
     language: str = "eng"
     corpus_dir: Path = Path("repo/dataset/ebible/corpus")
+    #: Train directly from a .zst artifact instead of the eBible .txt corpus.
+    zst_path: Path | None = None
+    #: Column/key holding the sentence when reading a CSV/JSONL .zst file.
+    zst_text_field: str = "sentence"
+    #: Cap the number of records read from the .zst file.
+    zst_limit: int | None = None
     metadata_csv: Path = Path("repo/dataset/ebible/metadata/translations.csv")
 
     dim: int = 128
@@ -202,9 +208,22 @@ def train(cfg: TrainConfig) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- 1. data -----------------------------------------------------------
-    corpus: Corpus = load_corpus(
-        cfg.language, cfg.corpus_dir, cfg.metadata_csv, max_files=cfg.max_files
-    )
+    if cfg.zst_path is not None:
+        from .data import load_zst_corpus
+
+        corpus: Corpus = load_zst_corpus(
+            cfg.zst_path,
+            text_field=cfg.zst_text_field,
+            language_code=(
+                None if cfg.language in ("", "auto") else cfg.language
+            ),
+            metadata_csv=cfg.metadata_csv,
+            limit=cfg.zst_limit,
+        )
+    else:
+        corpus = load_corpus(
+            cfg.language, cfg.corpus_dir, cfg.metadata_csv, max_files=cfg.max_files
+        )
     tokenizer = build_tokenizer(corpus, min_freq=cfg.min_freq, max_vocab=cfg.max_vocab)
 
     train_lines, val_lines = split_lines(corpus.lines, cfg.val_fraction, seed=cfg.seed)

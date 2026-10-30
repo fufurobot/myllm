@@ -231,8 +231,19 @@ Useful flags:
 | `--dim` / `--num-layers` | Model width and depth |
 | `--freeze-embeddings` | On by default; `--unfreeze-embeddings` trains `W_in`/`W_out` |
 | `--max-files` | Limit corpus files (useful for quick runs) |
+| `--zst` | Train from a `.zst` artifact instead of the `.txt` corpus |
+| `--zst-text-field` | CSV column / JSONL key holding the sentence (default `sentence`) |
+| `--zst-limit` | Cap how many records are read from the `.zst` file |
+| `--no-row-stochastic` | Disable row normalization (shows the gradient blow-up) |
 | `--max-vocab` | Cap the vocabulary size |
 | `--device` | `auto` (default), `cpu`, `cuda`, `mps` |
+
+Training from the released artifact, streaming sentences straight out of the
+compressed file (no decompression to disk):
+
+```bash
+uv run myllm train --zst notebooks/bible_sentences.csv.zst --device cuda
+```
 
 Artifacts are written to `runs/token_shift/`: `model.pt`, `tokenizer.json`,
 `config.json`, and `metrics.jsonl`.
