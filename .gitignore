@@ -237,3 +237,6 @@ huggingface/mirrors/**
 !huggingface/mirrors/**/
 !huggingface/mirrors/**/.gitkeep
 
+# large data artifacts (release assets, not source)
+notebooks/*.csv
+notebooks/*.zst
