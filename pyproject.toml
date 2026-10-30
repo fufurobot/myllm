@@ -18,6 +18,8 @@ dependencies = [
     "torchaudio==2.7.1",
     "torchvision==0.22.1",
     "transformers>=4.57.6",
+    # Required by myllm.dataset for lazy .zst readers.
+    "zstandard>=0.23.0",
 ]
 
 # Select the torch backend on install:
